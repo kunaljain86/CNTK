@@ -94,6 +94,19 @@ private:
             return GetUniqueNodeName(onnxNodeName, "onnx", legacyUid);
         }
 
+        //
+        //
+        //
+        static std::string GetUidNodeNamePairDescription()
+        {
+            std::string description = "<<<Uid, ONNXNodeName>>> pair: ";
+            for (auto iter = uidNodeNameMap.begin(); iter != uidNodeNameMap.end(); ++iter)
+            {
+                description += ("<<<" + iter->first + ", " + iter->second + ">>> ");
+            }
+            return description;
+        }
+
     private:
         //
         // Generate unique name based on nodeName, opName and uid.
@@ -702,6 +715,11 @@ void CNTKToONNXHelper::Copy(const FunctionPtr& src, onnxruntime::Graph* dst)
     {
         HandleRootCombineOp(srcSkipped, dst);
     }
+
+    //
+    // Save (Uid, ONNXNodeName) pair for all nodes to graph description.
+    //
+    dst->SetDescription(UniqueNodeNameStorage::GetUidNodeNamePairDescription());
 }
 
 void CNTKToONNXHelper::HandleRootCombineOp(const FunctionPtr& src, onnxruntime::Graph* dst)
@@ -3381,7 +3399,7 @@ NodeArg* CNTKToONNXHelper::GetInputAdjustmentForBroadcast(onnxruntime::Graph* gr
         //auto inputArgType = ToTypeProto(input.Shape(), input.HasBatchAxis(), input.HasSequenceAxis());
         //inputArgType.mutable_tensor_type()->set_elem_type(inputArgType.tensor_type().elem_type());
         //UpdateONNXType(input.GetDataType(), inputArgType);
-        std::string inputNodeArgName = ToLegacyString(ToUTF8(input.Uid()));
+        std::string inputNodeArgName = UniqueNodeNameStorage::GetUniqueInputNodeName(input);
         std::string outputArgName = inputNodeArgName + "_reshaped_for_broadcast";
         onnxruntime::NodeArg &nodeArg = graph->GetOrCreateNodeArg(inputNodeArgName, &inputArgType);
         Node *reshapeNode = AddReshapeNode(nodeArg, newShape, outputArgName, graph);
@@ -4732,11 +4750,13 @@ onnxruntime::Node* CNTKToONNXHelper::CreateONNXNodesForOneHotOp(const FunctionPt
     std::vector<onnxruntime::NodeArg*> outputs;
     ProcessOutputs(src, outputs, graph);
 
-    const std::string& outputName = outputs[0]->Name();
+    // Create names for onnx nodes base on node name in CNTK.
+    const std::string& nodeName = UniqueNodeNameStorage::GetUniqueNodeName(src);
 
     bool needsTransposeNode = !(onehotAxis == -1 || onehotAxis == static_cast<int64_t>(inputRank));
-    onnxruntime::NodeArg* oneHotOutputArg = needsTransposeNode ? &graph->GetOrCreateNodeArg(outputName + "_onehot_out", nullptr) : outputs[0];
-    onnxruntime::Node* oneHotNode = graph->AddNode(outputName, ToOPName(src), "", { inputs[0] }, { oneHotOutputArg }, nullptr, "ai.onnx.ml");
+    onnxruntime::NodeArg* oneHotOutputArg = needsTransposeNode ? &graph->GetOrCreateNodeArg(UniqueNodeNameStorage::GetUniqueNodeNameWithoutUid(nodeName + "_onehot_out"),
+        nullptr) : outputs[0];
+    onnxruntime::Node* oneHotNode = graph->AddNode(nodeName, ToOPName(src), "", { inputs[0] }, { oneHotOutputArg }, nullptr, "ai.onnx.ml");
 
     std::vector<int64_t> catsVector(numClass);
     std::iota(catsVector.begin(), catsVector.end(), 0);
@@ -4758,8 +4778,8 @@ onnxruntime::Node* CNTKToONNXHelper::CreateONNXNodesForOneHotOp(const FunctionPt
         std::vector<int64_t> permVector(onnxOutputRank-1);
         std::iota(permVector.begin(), permVector.end(), 0);
         permVector.insert(permVector.begin() + onnxAxis, onnxOutputRank - 1);
-        onnxruntime::NodeArg &transposeOutputArg = graph->GetOrCreateNodeArg(outputName + "_transpose_out", nullptr);
-        outputNode = graph->AddNode(outputName + "_Transpose", "Transpose", "", { oneHotOutputArg }, { outputs[0] });
+        onnxruntime::NodeArg &transposeOutputArg = graph->GetOrCreateNodeArg(UniqueNodeNameStorage::GetUniqueNodeNameWithoutUid(nodeName + "_transpose_out"), nullptr);
+        outputNode = graph->AddNode(UniqueNodeNameStorage::GetUniqueNodeNameWithoutUid(nodeName + "_Transpose"), "Transpose", "", { oneHotOutputArg }, { outputs[0] });
         outputNode->AddAttribute("perm", permVector);
     }
     else
