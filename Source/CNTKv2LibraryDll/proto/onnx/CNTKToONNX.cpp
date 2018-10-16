@@ -3120,13 +3120,14 @@ onnxruntime::Node* CNTKToONNXHelper::CreateSequenceSliceNode(const FunctionPtr& 
     auto outputArgType = ToTypeProto(src->Output().Shape(), src->Output().HasBatchAxis(), src->Output().HasSequenceAxis());
     UpdateONNXType(src->Output().GetDataType(), outputArgType);
 
-    std::string outputName = ToLegacyString(ToUTF8(src->BlockRoot()->Output().Uid()));
+    std::string outputName = UniqueNodeNameStorage::GetUniqueOutputNodeName(src->BlockRoot()->Output());
     std::string sliceOutputName = outputName;
     bool seq_dim_is_1 = endIndex - beginIndex == 1 || (endIndex == INT_MAX && beginIndex == -1);
     if (seq_dim_is_1)
     {
         // it appears that sequence.slice squeezes sequence axis out if slice length is 1
         sliceOutputName += "_PreReshape";
+        sliceOutputName = UniqueNodeNameStorage::GetUniqueNodeNameWithoutUid(sliceOutputName);
     }
 
     onnxruntime::NodeArg &outputNodeArg = graph->GetOrCreateNodeArg(sliceOutputName, &outputArgType);
@@ -3437,6 +3438,14 @@ void CNTKToONNXHelper::ProcessInputs(const FunctionPtr& src,
         input = SkipDynamicAxisPackUnpack(input, dynamicAxisPackUnpackSkipped);
         if (dynamicAxisPackUnpackSkipped)
             input = SkipBatchAndSequenceAxisInput(input);
+
+        // Input might be a placeholder after skipping.
+        if (input.IsPlaceholder())
+        {
+            input = input.BlockFunctionVariableMapping();
+            if (input.IsPlaceholder())
+                LogicError("Node '%S': Placeholder isn't supported currently.", src->AsString().c_str());
+        }
 
         // Special case handling of LayerNormalization layer because it changes
         // ops dynamically based on value of inputs. If more such cases ops are seen,

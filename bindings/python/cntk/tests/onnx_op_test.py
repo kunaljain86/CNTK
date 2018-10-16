@@ -65,7 +65,7 @@ def verify_no_input(model, tmpdir, name):
     opname = model.owner.op_name
 
     loaded_model = None
-    loaded_model, _, _, _ = create_and_populate_onnx_test_case_with_model_conversion(model, tmpdir, name, loaded_model)
+    loaded_model, onnx_model, test_model_path, test_data_path = create_and_populate_onnx_test_case_with_model_conversion(model, tmpdir, name, loaded_model)
 
     model_shape = model.shape
     dim_denotation = None
